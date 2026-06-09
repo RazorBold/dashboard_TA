@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block topbar_title %}Dashboard Monitoring{% endblock %}
+{% block topbar_sub %}Pantau pergerakan kontainer secara real-time{% endblock %}
+
+{% block content %}
+
+<!-- Filter Bar -->
+<div class="card mb-4">
+  <div class="filter-bar">
+    <div class="filter-row">
+      <div class="filter-group">
+        <label>Wilayah</label>
+        <select id="filterWilayah" class="form-select">
+          <option value="">Semua Wilayah</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Depo</label>
+        <select id="filterDepo" class="form-select">
+          <option value="">Semua Depo</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" id="btnApplyFilter">
+        <i data-lucide="search"></i> Terapkan
+      </button>
+      <button class="btn btn-outline" id="btnResetFilter">
+        <i data-lucide="rotate-ccw"></i> Reset
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- KPI Cards -->
+<div class="kpi-grid">
+  <div class="kpi-card kpi-in">
+    <div class="kpi-icon-wrap">
+      <i data-lucide="arrow-down-circle"></i>
+    </div>
+    <div class="kpi-body">
+      <div class="kpi-value" id="kpiIn">—</div>
+      <div class="kpi-label">Container IN Hari Ini</div>
+    </div>
+  </div>
+  <div class="kpi-card kpi-out">
+    <div class="kpi-icon-wrap">
+      <i data-lucide="arrow-up-circle"></i>
+    </div>
+    <div class="kpi-body">
+      <div class="kpi-value" id="kpiOut">—</div>
+      <div class="kpi-label">Container OUT Hari Ini</div>
+    </div>
+  </div>
+  <div class="kpi-card kpi-gw">
+    <div class="kpi-icon-wrap">
+      <i data-lucide="server"></i>
+    </div>
+    <div class="kpi-body">
+      <div class="kpi-value" id="kpiGw">—</div>
+      <div class="kpi-label">Gateway Online</div>
+    </div>
+  </div>
+  <div class="kpi-card kpi-tag">
+    <div class="kpi-icon-wrap">
+      <i data-lucide="tag"></i>
+    </div>
+    <div class="kpi-body">
+      <div class="kpi-value" id="kpiTag">—</div>
+      <div class="kpi-label">Tag Terdaftar</div>
+    </div>
+  </div>
+</div>
+
+<!-- Activity Feed + Chart -->
+<div class="row-2col mt-4">
+  <div class="card flex-col">
+    <div class="card-header">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <i data-lucide="activity" class="icon-md" style="color:var(--primary)"></i>
+        <span>Activity Feed</span>
+        <span class="badge badge-live">LIVE</span>
+      </div>
+      <span class="stat-chip" id="feedCount">0 event</span>
+    </div>
+    <div class="activity-feed" id="activityFeed">
+      <div class="feed-loading">
+        <i data-lucide="loader" class="spin" style="width:28px;height:28px;color:var(--text-soft);margin:0 auto 10px"></i>
+        <p>Memuat data...</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card flex-col">
+    <div class="card-header">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <i data-lucide="bar-chart-2" class="icon-md" style="color:var(--primary)"></i>
+        <span>IN vs OUT — 7 Hari Terakhir</span>
+      </div>
+    </div>
+    <div class="chart-wrap">
+      <canvas id="miniChart"></canvas>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let miniChart = null;
+let currentWilayah = "";
+let currentDepo = "";
+let feedCount = 0;
+
+async function loadWilayah() {
+  const res = await fetch("/api/wilayah");
+  const data = await res.json();
+  const sel = document.getElementById("filterWilayah");
+  data.forEach(w => {
+    const opt = document.createElement("option");
+    opt.value = w.id; opt.textContent = w.nama;
+    sel.appendChild(opt);
+  });
+}
+
+async function loadDepo(wilayahId) {
+  const url = wilayahId ? `/api/depo?wilayah_id=${wilayahId}` : "/api/depo";
+  const res = await fetch(url);
+  const data = await res.json();
+  const sel = document.getElementById("filterDepo");
+  sel.innerHTML = '<option value="">Semua Depo</option>';
+  data.forEach(d => {
+    const opt = document.createElement("option");
+    opt.value = d.id; opt.textContent = d.nama;
+    sel.appendChild(opt);
+  });
+}
+
+async function loadKPI() {
+  const params = new URLSearchParams();
+  if (currentWilayah) params.set("wilayah_id", currentWilayah);
+  if (currentDepo) params.set("depo_id", currentDepo);
+  const res = await fetch("/api/dashboard/kpi?" + params);
+  const d = await res.json();
+  animateNumber("kpiIn", parseInt(d.total_in));
+  animateNumber("kpiOut", parseInt(d.total_out));
+  document.getElementById("kpiGw").textContent = `${d.gw_online}/${d.gw_total}`;
+  animateNumber("kpiTag", parseInt(d.tag_total));
+}
+
+function animateNumber(id, target) {
+  const el = document.getElementById(id);
+  const current = parseInt(el.textContent) || 0;
+  if (el.textContent === "—") { el.textContent = target; return; }
+  const diff = target - current;
+  if (!diff) return;
+  const steps = 20;
+  let i = 0;
+  const interval = setInterval(() => {
+    i++;
+    el.textContent = Math.round(current + diff * (i / steps));
+    if (i >= steps) clearInterval(interval);
+  }, 600 / steps);
+}
+
+async function loadActivity() {
+  const res = await fetch("/api/dashboard/activity?limit=30");
+  const data = await res.json();
+  feedCount = data.length;
+  renderFeed(data);
+}
+
+function renderFeed(events) {
+  const feed = document.getElementById("activityFeed");
+  document.getElementById("feedCount").textContent = `${feedCount} event`;
+  if (!events.length) {
+    feed.innerHTML = `<div class="empty-state"><p>Belum ada aktivitas</p></div>`;
+    return;
+  }
+  feed.innerHTML = events.map(e => buildFeedItem(e)).join("");
+}
+
+function buildFeedItem(e) {
+  const isIn = e.event_type === "IN";
+  return `
+    <div class="feed-item feed-${e.event_type.toLowerCase()}">
+      <span class="badge ${isIn ? 'badge-in' : 'badge-out'}">${isIn ? 'IN' : 'OUT'}</span>
+      <div class="feed-info">
+        <strong>${e.container_id}</strong>
+        <small>${e.mac_address} &middot; ${e.gateway_id}${e.gateway_nama ? ' (' + e.gateway_nama + ')' : ''}</small>
+        <small>${[e.depo_nama, e.wilayah_nama].filter(Boolean).join(' &mdash; ')}</small>
+      </div>
+      <div class="feed-time">${formatTime(e.timestamp)}</div>
+    </div>`;
+}
+
+function prependFeedItem(e) {
+  const feed = document.getElementById("activityFeed");
+  const emptyState = feed.querySelector(".empty-state, .feed-loading");
+  if (emptyState) feed.innerHTML = "";
+  feedCount++;
+  document.getElementById("feedCount").textContent = `${feedCount} event`;
+  const div = document.createElement("div");
+  div.innerHTML = buildFeedItem(e);
+  const item = div.firstElementChild;
+  item.classList.add("feed-new");
+  feed.prepend(item);
+  const items = feed.querySelectorAll(".feed-item");
+  if (items.length > 30) items[items.length - 1].remove();
+}
+
+async function loadMiniChart() {
+  const params = new URLSearchParams({ period: "daily" });
+  if (currentWilayah) params.set("wilayah_id", currentWilayah);
+  if (currentDepo) params.set("depo_id", currentDepo);
+  const res = await fetch("/api/analytics/chart?" + params);
+  const d = await res.json();
+  const labels = d.labels.slice(-7);
+  const inData = d.in.slice(-7);
+  const outData = d.out.slice(-7);
+  const ctx = document.getElementById("miniChart").getContext("2d");
+  if (miniChart) miniChart.destroy();
+  const gradIn = ctx.createLinearGradient(0, 0, 0, 260);
+  gradIn.addColorStop(0, "rgba(22,163,74,.55)");
+  gradIn.addColorStop(1, "rgba(22,163,74,.05)");
+  const gradOut = ctx.createLinearGradient(0, 0, 0, 260);
+  gradOut.addColorStop(0, "rgba(220,38,38,.55)");
+  gradOut.addColorStop(1, "rgba(220,38,38,.05)");
+  miniChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [
+        { label: "IN", data: inData, backgroundColor: gradIn, borderColor: "#16a34a", borderWidth: 2, borderRadius: 6, borderSkipped: false },
+        { label: "OUT", data: outData, backgroundColor: gradOut, borderColor: "#dc2626", borderWidth: 2, borderRadius: 6, borderSkipped: false }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: "top", labels: { usePointStyle: true, pointStyle: "circle", padding: 14, font: { family: "Inter", size: 12 } } },
+        tooltip: {
+          mode: "index", intersect: false,
+          backgroundColor: "#fff", borderColor: "#e2e8f0", borderWidth: 1,
+          titleColor: "#0f172a", bodyColor: "#64748b", padding: 12, cornerRadius: 10,
+          bodyFont: { family: "Inter" }, titleFont: { family: "Inter", weight: "600" }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { family: "Inter", size: 11 } } },
+        y: { beginAtZero: true, grid: { color: "#f1f5f9" }, ticks: { font: { family: "Inter", size: 11 } } }
+      }
+    }
+  });
+}
+
+function formatTime(ts) {
+  if (!ts) return "";
+  // Append "Z" so browser treats server UTC timestamps as UTC, not local
+  const diff = Math.floor((Date.now() - new Date(ts.replace(" ", "T") + "Z")) / 1000);
+  if (diff < 5) return "baru saja";
+  if (diff < 60) return `${diff} dtk lalu`;
+  if (diff < 3600) return `${Math.floor(diff/60)} mnt lalu`;
+  if (diff < 86400) return `${Math.floor(diff/3600)} jam lalu`;
+  return ts.split(" ")[0];
+}
+
+loadWilayah(); loadDepo(); loadKPI(); loadActivity(); loadMiniChart();
+
+document.getElementById("filterWilayah").addEventListener("change", function() { loadDepo(this.value); });
+document.getElementById("btnApplyFilter").addEventListener("click", () => {
+  currentWilayah = document.getElementById("filterWilayah").value;
+  currentDepo = document.getElementById("filterDepo").value;
+  loadKPI(); loadActivity(); loadMiniChart();
+});
+document.getElementById("btnResetFilter").addEventListener("click", () => {
+  document.getElementById("filterWilayah").value = "";
+  document.getElementById("filterDepo").value = "";
+  currentWilayah = ""; currentDepo = "";
+  loadDepo(); loadKPI(); loadActivity(); loadMiniChart();
+});
+
+window._onNewEvent = function(e) { prependFeedItem(e); loadKPI(); };
+setInterval(loadKPI, 30000);
+</script>
+{% endblock %}

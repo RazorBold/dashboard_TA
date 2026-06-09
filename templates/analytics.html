@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block title %}Analytics{% endblock %}
+{% block topbar_title %}Statistik & Analytics{% endblock %}
+{% block topbar_sub %}Analisis tren pergerakan kontainer per periode{% endblock %}
+
+{% block content %}
+<div class="card mb-4">
+  <div class="filter-bar">
+    <div class="filter-row">
+      <div class="filter-group">
+        <label>Periode</label>
+        <select id="fPeriod" class="form-select">
+          <option value="daily">Harian (30 hari terakhir)</option>
+          <option value="monthly">Bulanan (12 bulan terakhir)</option>
+          <option value="yearly">Tahunan (5 tahun terakhir)</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Wilayah</label>
+        <select id="fWilayah" class="form-select" onchange="loadDepoOpts(this.value)">
+          <option value="">Semua Wilayah</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Depo</label>
+        <select id="fDepo" class="form-select">
+          <option value="">Semua Depo</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" onclick="loadAll()">
+        <i data-lucide="bar-chart-2"></i> Tampilkan
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Summary -->
+<div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap">
+  <div class="stat-chip" id="chipTotalIn">IN: —</div>
+  <div class="stat-chip" id="chipTotalOut">OUT: —</div>
+  <div class="stat-chip" id="chipTotal">Total: —</div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <i data-lucide="bar-chart-2" class="icon-md" style="color:var(--primary)"></i>
+      <span>Grafik IN vs OUT Kontainer</span>
+    </div>
+  </div>
+  <div class="chart-wrap-tall">
+    <canvas id="mainChart"></canvas>
+  </div>
+</div>
+
+<div class="row-2col">
+  <div class="card">
+    <div class="card-header">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <i data-lucide="pie-chart" class="icon-md" style="color:var(--primary)"></i>
+        <span>Proporsi IN vs OUT</span>
+      </div>
+    </div>
+    <div class="chart-wrap">
+      <canvas id="donutChart"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <i data-lucide="award" class="icon-md" style="color:var(--primary)"></i>
+        <span>Top 5 Depo Teraktif (30 Hari)</span>
+      </div>
+    </div>
+    <div class="chart-wrap">
+      <canvas id="barDepo"></canvas>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let mainChart = null, donutChart = null, barDepo = null;
+Chart.defaults.font.family = "Inter";
+Chart.defaults.color = "#64748b";
+
+const TOOLTIP_STYLE = {
+  backgroundColor: "#fff", borderColor: "#e2e8f0", borderWidth: 1,
+  titleColor: "#0f172a", bodyColor: "#64748b", padding: 12, cornerRadius: 10
+};
+
+async function loadWilayah() {
+  const res = await fetch("/api/wilayah");
+  const data = await res.json();
+  const sel = document.getElementById("fWilayah");
+  data.forEach(w => sel.innerHTML += `<option value="${w.id}">${w.nama}</option>`);
+}
+
+async function loadDepoOpts(id) {
+  const url = id ? `/api/depo?wilayah_id=${id}` : "/api/depo";
+  const res = await fetch(url);
+  const data = await res.json();
+  const sel = document.getElementById("fDepo");
+  sel.innerHTML = '<option value="">Semua Depo</option>';
+  data.forEach(d => sel.innerHTML += `<option value="${d.id}">${d.nama}</option>`);
+}
+
+async function loadMainChart() {
+  const params = new URLSearchParams({
+    period: document.getElementById("fPeriod").value,
+    wilayah_id: document.getElementById("fWilayah").value,
+    depo_id: document.getElementById("fDepo").value
+  });
+  const res = await fetch("/api/analytics/chart?" + params);
+  const d = await res.json();
+
+  const totalIn = d.in.reduce((a, b) => a + b, 0);
+  const totalOut = d.out.reduce((a, b) => a + b, 0);
+  document.getElementById("chipTotalIn").textContent  = `IN: ${totalIn.toLocaleString('id-ID')}`;
+  document.getElementById("chipTotalOut").textContent = `OUT: ${totalOut.toLocaleString('id-ID')}`;
+  document.getElementById("chipTotal").textContent    = `Total: ${(totalIn+totalOut).toLocaleString('id-ID')}`;
+
+  const ctx = document.getElementById("mainChart").getContext("2d");
+  const gradIn = ctx.createLinearGradient(0, 0, 0, 380);
+  gradIn.addColorStop(0, "rgba(22,163,74,.6)"); gradIn.addColorStop(1, "rgba(22,163,74,.05)");
+  const gradOut = ctx.createLinearGradient(0, 0, 0, 380);
+  gradOut.addColorStop(0, "rgba(220,38,38,.6)"); gradOut.addColorStop(1, "rgba(220,38,38,.05)");
+
+  if (mainChart) mainChart.destroy();
+  mainChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: d.labels,
+      datasets: [
+        { label: "IN", data: d.in, backgroundColor: gradIn, borderColor: "#16a34a", borderWidth: 2, borderRadius: 6, borderSkipped: false },
+        { label: "OUT", data: d.out, backgroundColor: gradOut, borderColor: "#dc2626", borderWidth: 2, borderRadius: 6, borderSkipped: false }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 600, easing: "easeOutQuart" },
+      plugins: {
+        legend: { position: "top", labels: { usePointStyle: true, pointStyle: "circle", padding: 16 } },
+        tooltip: { mode: "index", intersect: false, ...TOOLTIP_STYLE }
+      },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true, grid: { color: "#f1f5f9" } }
+      }
+    }
+  });
+
+  // Donut
+  const dCtx = document.getElementById("donutChart").getContext("2d");
+  if (donutChart) donutChart.destroy();
+  donutChart = new Chart(dCtx, {
+    type: "doughnut",
+    data: {
+      labels: ["IN", "OUT"],
+      datasets: [{ data: [totalIn, totalOut], backgroundColor: ["#16a34a", "#dc2626"], borderColor: "#fff", borderWidth: 4, hoverOffset: 6 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: "68%",
+      animation: { duration: 600, easing: "easeOutQuart" },
+      plugins: {
+        legend: { position: "bottom", labels: { usePointStyle: true, pointStyle: "circle", padding: 18 } },
+        tooltip: {
+          ...TOOLTIP_STYLE,
+          callbacks: {
+            label: ctx => {
+              const t = totalIn + totalOut;
+              const pct = t ? ((ctx.parsed / t) * 100).toFixed(1) : 0;
+              return ` ${ctx.label}: ${ctx.parsed} (${pct}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+async function loadTopDepo() {
+  const res = await fetch("/api/analytics/top_depo");
+  const d = await res.json();
+  const ctx = document.getElementById("barDepo").getContext("2d");
+  if (barDepo) barDepo.destroy();
+  barDepo = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: d.map(r => r.nama),
+      datasets: [{
+        label: "Total Event",
+        data: d.map(r => r.total),
+        backgroundColor: ["#2563eb", "#7c3aed", "#d97706", "#16a34a", "#ec4899"],
+        borderRadius: 6, borderSkipped: false
+      }]
+    },
+    options: {
+      indexAxis: "y", responsive: true, maintainAspectRatio: false,
+      animation: { duration: 600, easing: "easeOutQuart" },
+      plugins: { legend: { display: false }, tooltip: TOOLTIP_STYLE },
+      scales: {
+        x: { beginAtZero: true, grid: { color: "#f1f5f9" } },
+        y: { grid: { display: false } }
+      }
+    }
+  });
+}
+
+function loadAll() { loadMainChart(); loadTopDepo(); }
+loadWilayah(); loadDepoOpts(); loadAll();
+</script>
+{% endblock %}

@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}BLE Tags{% endblock %}
+{% block topbar_title %}Manajemen BLE Tags{% endblock %}
+{% block topbar_sub %}Kelola tag dan mapping ke kontainer{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <i data-lucide="tag" class="icon-md" style="color:var(--primary)"></i>
+      <span>Daftar BLE Tag</span>
+      <span class="stat-chip" id="tagCount">—</span>
+    </div>
+    <button class="btn btn-primary" onclick="openModal()">
+      <i data-lucide="plus"></i> Tambah Tag
+    </button>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>MAC Address</th>
+          <th>Container ID</th>
+          <th>Tipe</th>
+          <th>Status Tag</th>
+          <th>Posisi</th>
+          <th>Last Seen</th>
+          <th>Aksi</th>
+        </tr>
+      </thead>
+      <tbody id="tagBody">
+        <tr><td colspan="8" style="padding:40px;text-align:center;color:var(--text-muted)">Memuat data...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span id="modalTitle">Tambah BLE Tag</span>
+      <button class="modal-close" onclick="closeModal()">
+        <i data-lucide="x" class="icon-sm"></i>
+      </button>
+    </div>
+    <form id="tagForm">
+      <input type="hidden" id="tagId" />
+      <div class="form-group">
+        <label>MAC Address *</label>
+        <input type="text" id="fMac" class="form-control" placeholder="AA:BB:CC:DD:EE:FF" required />
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Container ID</label>
+          <input type="text" id="fContainer" class="form-control" placeholder="CONT-001" />
+        </div>
+        <div class="form-group">
+          <label>Tipe Container</label>
+          <select id="fContainerType" class="form-select">
+            <option>Standard</option><option>Reefer</option>
+            <option>Tank</option><option>Open Top</option><option>Flat Rack</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select id="fStatus" class="form-select">
+          <option value="Active">Active</option>
+          <option value="Inactive">Inactive</option>
+          <option value="Lost">Lost</option>
+        </select>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" onclick="closeModal()">Batal</button>
+        <button type="submit" class="btn btn-primary">
+          <i data-lucide="save"></i> Simpan
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function positionBadge(pos) {
+  if (!pos) return '<span style="color:var(--text-soft);font-size:12px">—</span>';
+  if (pos === 'IN')  return '<span class="badge badge-in">IN</span>';
+  if (pos === 'OUT') return '<span class="badge badge-out">OUT</span>';
+  return `<span class="badge">${pos}</span>`;
+}
+
+function fmtTs(ts) {
+  if (!ts) return '<span style="color:var(--text-soft)">Belum terdeteksi</span>';
+  const d = new Date(ts.replace(' ', 'T') + 'Z');
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+async function loadTags() {
+  const res = await fetch("/api/tags");
+  const data = await res.json();
+  document.getElementById("tagCount").textContent = `${data.length} tag`;
+  const body = document.getElementById("tagBody");
+  if (!data.length) {
+    body.innerHTML = `<tr><td colspan="8"><div class="empty-state"><p>Belum ada BLE Tag terdaftar</p></div></td></tr>`;
+    return;
+  }
+  body.innerHTML = data.map((t, i) => `
+    <tr style="animation:pageIn .3s cubic-bezier(.4,0,.2,1) ${i*.03}s both">
+      <td style="color:var(--text-muted);font-size:12px">${i+1}</td>
+      <td><code>${t.mac_address}</code></td>
+      <td>${t.container_id ? `<strong style="color:var(--primary)">${t.container_id}</strong>` : '<span style="color:var(--text-soft)">—</span>'}</td>
+      <td style="font-size:12px;color:var(--text-muted)">${t.container_type || '—'}</td>
+      <td><span class="badge ${statusClass(t.status)}">${t.status}</span></td>
+      <td>${positionBadge(t.position)}</td>
+      <td style="font-size:12px;color:var(--text-muted)">${fmtTs(t.last_seen)}</td>
+      <td class="action-cell">
+        <button class="btn btn-sm btn-outline" onclick='editTag(${JSON.stringify(t).replace(/"/g,"&quot;")})'>Edit</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteTag(${t.id})">Hapus</button>
+      </td>
+    </tr>
+  `).join("");
+}
+
+function statusClass(s) {
+  return { Active: "badge-success", Lost: "badge-danger", Inactive: "badge-warning" }[s] || "badge-warning";
+}
+
+function openModal(tag) {
+  document.getElementById("modalOverlay").classList.add("show");
+  lucide.createIcons();
+  if (tag) {
+    document.getElementById("modalTitle").textContent = "Edit BLE Tag";
+    document.getElementById("tagId").value = tag.id;
+    document.getElementById("fMac").value = tag.mac_address;
+    document.getElementById("fContainer").value = tag.container_id || "";
+    document.getElementById("fContainerType").value = tag.container_type || "Standard";
+    document.getElementById("fStatus").value = tag.status;
+  } else {
+    document.getElementById("modalTitle").textContent = "Tambah BLE Tag";
+    document.getElementById("tagForm").reset();
+    document.getElementById("tagId").value = "";
+  }
+}
+
+function editTag(tag) { openModal(tag); }
+function closeModal() { document.getElementById("modalOverlay").classList.remove("show"); }
+
+document.getElementById("tagForm").addEventListener("submit", async function(e) {
+  e.preventDefault();
+  const id = document.getElementById("tagId").value;
+  const payload = {
+    mac_address: document.getElementById("fMac").value.toUpperCase().trim(),
+    container_id: document.getElementById("fContainer").value || null,
+    container_type: document.getElementById("fContainerType").value,
+    status: document.getElementById("fStatus").value
+  };
+  const res = await fetch(id ? `/api/tags/${id}` : "/api/tags", {
+    method: id ? "PUT" : "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const d = await res.json();
+  if (d.ok) { showToast("Tag berhasil disimpan", "success"); closeModal(); loadTags(); }
+  else showToast("Error: " + d.error, "error");
+});
+
+async function deleteTag(id) {
+  if (!confirm("Hapus tag ini?")) return;
+  await fetch(`/api/tags/${id}`, { method: "DELETE" });
+  showToast("Tag dihapus", "info");
+  loadTags();
+}
+
+document.getElementById("modalOverlay").addEventListener("click", e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+
+loadTags();
+</script>
+{% endblock %}

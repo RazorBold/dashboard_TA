@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}BLE Monitor{% endblock %} — BLE Container Monitor</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+</head>
+<body>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-logo">
+        <i data-lucide="radio" class="icon-xl"></i>
+      </div>
+      <div class="brand-info">
+        <span class="brand-title">BLE Monitor</span>
+        <span class="brand-sub">Container Tracking</span>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <span class="nav-section-label">Menu Utama</span>
+
+      <a href="/" class="nav-item {% if request.path == '/' %}active{% endif %}">
+        <span class="nav-icon"><i data-lucide="layout-dashboard"></i></span>
+        <span class="nav-label">Dashboard</span>
+      </a>
+      <a href="/tags" class="nav-item {% if request.path == '/tags' %}active{% endif %}">
+        <span class="nav-icon"><i data-lucide="tag"></i></span>
+        <span class="nav-label">BLE Tags</span>
+      </a>
+      <a href="/gateways" class="nav-item {% if request.path == '/gateways' %}active{% endif %}">
+        <span class="nav-icon"><i data-lucide="wifi"></i></span>
+        <span class="nav-label">Gateways</span>
+      </a>
+
+      <span class="nav-section-label">Laporan</span>
+
+      <a href="/logs" class="nav-item {% if request.path == '/logs' %}active{% endif %}">
+        <span class="nav-icon"><i data-lucide="clipboard-list"></i></span>
+        <span class="nav-label">Log Transaksi</span>
+      </a>
+      <a href="/analytics" class="nav-item {% if request.path == '/analytics' %}active{% endif %}">
+        <span class="nav-icon"><i data-lucide="bar-chart-2"></i></span>
+        <span class="nav-label">Analytics</span>
+      </a>
+
+      <span class="nav-section-label">Live Monitor</span>
+
+      <a href="/deteksi" class="nav-item {% if request.path == '/deteksi' %}active{% endif %}">
+        <span class="nav-icon"><i data-lucide="radar"></i></span>
+        <span class="nav-label">Deteksi BLE</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="ws-status">
+        <div class="ws-pill">
+          <span class="ws-dot" id="wsDot"></span>
+          <span id="wsLabel">Menghubungkan...</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <div class="main-wrap">
+    <header class="topbar">
+      <button class="sidebar-toggle" id="sidebarToggle">
+        <i data-lucide="menu"></i>
+      </button>
+      <div class="topbar-left">
+        <div class="topbar-title">{% block topbar_title %}{% endblock %}</div>
+        <div class="topbar-sub">{% block topbar_sub %}BLE Container Monitoring System{% endblock %}</div>
+      </div>
+      <div class="topbar-right">
+        <div class="clock-box">
+          <i data-lucide="clock" class="icon-sm" style="color:var(--text-muted)"></i>
+          <span id="clockDisplay" class="clock"></span>
+        </div>
+        <button class="btn btn-sim" id="btnSimulate">
+          <i data-lucide="zap"></i>
+          Simulasi
+        </button>
+      </div>
+    </header>
+
+    <main class="content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

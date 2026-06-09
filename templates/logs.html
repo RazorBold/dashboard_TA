@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}Log Transaksi{% endblock %}
+{% block topbar_title %}Log Transaksi IN/OUT{% endblock %}
+{% block topbar_sub %}Riwayat lengkap pergerakan kontainer{% endblock %}
+
+{% block content %}
+<div class="card mb-4">
+  <div class="filter-bar">
+    <div class="filter-row">
+      <div class="filter-group" style="min-width:220px;">
+        <label>Cari</label>
+        <input type="text" id="fSearch" class="form-control" placeholder="Container ID / MAC / Gateway..." />
+      </div>
+      <div class="filter-group">
+        <label>Event</label>
+        <select id="fEvent" class="form-select">
+          <option value="">Semua Event</option>
+          <option value="IN">IN</option>
+          <option value="OUT">OUT</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Wilayah</label>
+        <select id="fWilayah" class="form-select" onchange="onWilayahChange(this.value)">
+          <option value="">Semua</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Depo</label>
+        <select id="fDepo" class="form-select">
+          <option value="">Semua</option>
+        </select>
+      </div>
+    </div>
+    <div class="filter-row">
+      <div class="filter-group">
+        <label>Dari Tanggal</label>
+        <input type="date" id="fDateFrom" class="form-control" />
+      </div>
+      <div class="filter-group">
+        <label>Sampai Tanggal</label>
+        <input type="date" id="fDateTo" class="form-control" />
+      </div>
+      <button class="btn btn-primary" id="btnSearch">
+        <i data-lucide="search"></i> Cari
+      </button>
+      <button class="btn btn-outline" onclick="resetFilter()">
+        <i data-lucide="rotate-ccw"></i> Reset
+      </button>
+      <div class="export-btns">
+        <button class="btn btn-success" onclick="exportExcel()">
+          <i data-lucide="file-spreadsheet"></i> Excel
+        </button>
+        <button class="btn btn-warning" onclick="exportPDF()">
+          <i data-lucide="file-text"></i> PDF
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <i data-lucide="clipboard-list" class="icon-md" style="color:var(--primary)"></i>
+      <span>Log Pergerakan Kontainer</span>
+    </div>
+    <span class="stat-chip" id="totalLabel">—</span>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Timestamp</th>
+          <th>Container ID</th>
+          <th>BLE MAC</th>
+          <th>Gateway</th>
+          <th>Depo / Wilayah</th>
+          <th>Event</th>
+          <th>RSSI</th>
+        </tr>
+      </thead>
+      <tbody id="logBody">
+        <tr><td colspan="8" style="padding:40px;text-align:center;color:var(--text-muted)">Memuat data...</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="pagination-bar" id="pagination"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentPage = 1;
+
+async function loadWilayah() {
+  const res = await fetch("/api/wilayah");
+  const data = await res.json();
+  const sel = document.getElementById("fWilayah");
+  data.forEach(w => sel.innerHTML += `<option value="${w.id}">${w.nama}</option>`);
+}
+
+async function onWilayahChange(id) {
+  const url = id ? `/api/depo?wilayah_id=${id}` : "/api/depo";
+  const res = await fetch(url);
+  const data = await res.json();
+  const sel = document.getElementById("fDepo");
+  sel.innerHTML = '<option value="">Semua</option>';
+  data.forEach(d => sel.innerHTML += `<option value="${d.id}">${d.nama}</option>`);
+}
+
+function fmtTs(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts.replace(' ', 'T') + 'Z');
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+async function loadLogs(page) {
+  page = page || 1; currentPage = page;
+  const params = new URLSearchParams({
+    page, per_page: 25,
+    search: document.getElementById("fSearch").value,
+    event_type: document.getElementById("fEvent").value,
+    wilayah_id: document.getElementById("fWilayah").value,
+    depo_id: document.getElementById("fDepo").value,
+    date_from: document.getElementById("fDateFrom").value,
+    date_to: document.getElementById("fDateTo").value
+  });
+  const res = await fetch("/api/logs?" + params);
+  const d = await res.json();
+  document.getElementById("totalLabel").textContent = `${d.total.toLocaleString('id-ID')} data`;
+  const body = document.getElementById("logBody");
+  if (!d.data.length) {
+    body.innerHTML = `<tr><td colspan="8"><div class="empty-state"><p>Tidak ada data yang cocok</p></div></td></tr>`;
+    document.getElementById("pagination").innerHTML = "";
+    return;
+  }
+  const offset = (page - 1) * 25;
+  body.innerHTML = d.data.map((r, i) => `
+    <tr class="${r.event_type === 'IN' ? 'row-in' : 'row-out'}" style="animation:pageIn .25s cubic-bezier(.4,0,.2,1) ${i*.02}s both">
+      <td style="color:var(--text-muted);font-size:12px">${offset+i+1}</td>
+      <td style="font-size:12px;white-space:nowrap">${fmtTs(r.timestamp)}</td>
+      <td><strong style="color:var(--primary)">${r.container_id}</strong></td>
+      <td><code>${r.mac_address}</code></td>
+      <td>
+        <div style="font-size:13px;font-weight:600">${r.gateway_id}</div>
+        <div style="font-size:11px;color:var(--text-muted)">${r.gateway_nama || ''}</div>
+      </td>
+      <td>
+        <div style="font-size:13px">${r.depo_nama || '—'}</div>
+        <div style="font-size:11px;color:var(--text-muted)">${r.wilayah_nama || ''}</div>
+      </td>
+      <td><span class="badge ${r.event_type === 'IN' ? 'badge-in' : 'badge-out'}">${r.event_type}</span></td>
+      <td style="font-size:12px;color:var(--text-muted)">${r.rssi !== null ? r.rssi + ' dBm' : '—'}</td>
+    </tr>
+  `).join("");
+  renderPagination(d.page, d.pages);
+}
+
+function renderPagination(page, pages) {
+  if (pages <= 1) { document.getElementById("pagination").innerHTML = ""; return; }
+  let html = "";
+  const start = Math.max(1, page - 2), end = Math.min(pages, page + 2);
+  if (page > 1) html += `<button class="page-btn" onclick="loadLogs(${page-1})">&#8249;</button>`;
+  if (start > 1) html += `<button class="page-btn" onclick="loadLogs(1)">1</button><span class="page-ellipsis">&hellip;</span>`;
+  for (let i = start; i <= end; i++) html += `<button class="page-btn ${i===page?'active':''}" onclick="loadLogs(${i})">${i}</button>`;
+  if (end < pages) html += `<span class="page-ellipsis">&hellip;</span><button class="page-btn" onclick="loadLogs(${pages})">${pages}</button>`;
+  if (page < pages) html += `<button class="page-btn" onclick="loadLogs(${page+1})">&#8250;</button>`;
+  document.getElementById("pagination").innerHTML = html;
+}
+
+function resetFilter() {
+  ["fSearch","fEvent","fWilayah","fDepo","fDateFrom","fDateTo"].forEach(id => { document.getElementById(id).value = ""; });
+  loadLogs(1);
+}
+
+function buildExportParams() {
+  return new URLSearchParams({
+    wilayah_id: document.getElementById("fWilayah").value,
+    depo_id: document.getElementById("fDepo").value,
+    date_from: document.getElementById("fDateFrom").value,
+    date_to: document.getElementById("fDateTo").value
+  }).toString();
+}
+
+function exportExcel() { window.location = "/api/export/excel?" + buildExportParams(); }
+function exportPDF()   { window.location = "/api/export/pdf?" + buildExportParams(); }
+
+document.getElementById("btnSearch").addEventListener("click", () => loadLogs(1));
+document.getElementById("fSearch").addEventListener("keydown", e => { if (e.key === "Enter") loadLogs(1); });
+window._onNewEvent = function() { if (currentPage === 1) loadLogs(1); };
+
+loadWilayah(); loadLogs(1);
+</script>
+{% endblock %}

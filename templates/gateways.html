@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+{% block title %}Gateways{% endblock %}
+{% block topbar_title %}Manajemen Gateway{% endblock %}
+{% block topbar_sub %}Pantau status perangkat BLE Gateway di setiap depo{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <i data-lucide="wifi" class="icon-md" style="color:var(--primary)"></i>
+      <span>Daftar Gateway</span>
+      <span class="stat-chip" id="gwCount">—</span>
+    </div>
+    <button class="btn btn-primary" onclick="openModal()">
+      <i data-lucide="plus"></i> Tambah Gateway
+    </button>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Gateway ID</th>
+          <th>Nama</th>
+          <th>Depo / Wilayah</th>
+          <th>Zone</th>
+          <th>IP Address</th>
+          <th>Status</th>
+          <th>Last Active</th>
+          <th>Aksi</th>
+        </tr>
+      </thead>
+      <tbody id="gwBody">
+        <tr><td colspan="9" style="padding:40px;text-align:center;color:var(--text-muted)">Memuat data...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span id="modalTitle">Tambah Gateway</span>
+      <button class="modal-close" onclick="closeModal()">
+        <i data-lucide="x" class="icon-sm"></i>
+      </button>
+    </div>
+    <form id="gwForm">
+      <input type="hidden" id="gwId" />
+      <div class="form-row">
+        <div class="form-group">
+          <label>Gateway ID *</label>
+          <input type="text" id="fGwId" class="form-control" placeholder="GW-001" required />
+        </div>
+        <div class="form-group">
+          <label>Nama *</label>
+          <input type="text" id="fNama" class="form-control" placeholder="Gate IN Priok" required />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Wilayah</label>
+          <select id="fWilayah" class="form-select" onchange="loadDepoOpts(this.value)">
+            <option value="">— pilih wilayah —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Depo</label>
+          <select id="fDepo" class="form-select">
+            <option value="">— pilih depo —</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Zone</label>
+          <select id="fZone" class="form-select">
+            <option value="IN">IN — Masuk Area</option>
+            <option value="OUT">OUT — Keluar Area</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>IP Address</label>
+          <input type="text" id="fIp" class="form-control" placeholder="192.168.1.10" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select id="fStatus" class="form-select">
+          <option value="Online">Online</option>
+          <option value="Offline">Offline</option>
+        </select>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" onclick="closeModal()">Batal</button>
+        <button type="submit" class="btn btn-primary">
+          <i data-lucide="save"></i> Simpan
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function fmtTs(ts) {
+  if (!ts) return '<span style="color:var(--text-soft)">—</span>';
+  const d = new Date(ts.replace(' ', 'T') + 'Z');
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+async function loadGateways() {
+  const res = await fetch("/api/gateways");
+  const data = await res.json();
+  document.getElementById("gwCount").textContent = `${data.length} gateway`;
+  const body = document.getElementById("gwBody");
+  if (!data.length) {
+    body.innerHTML = `<tr><td colspan="9"><div class="empty-state"><p>Belum ada gateway terdaftar</p></div></td></tr>`;
+    return;
+  }
+  body.innerHTML = data.map((g, i) => `
+    <tr style="animation:pageIn .3s cubic-bezier(.4,0,.2,1) ${i*.03}s both">
+      <td style="color:var(--text-muted);font-size:12px">${i+1}</td>
+      <td><code>${g.gateway_id}</code></td>
+      <td style="font-weight:600">${g.nama}</td>
+      <td>
+        <div style="font-size:13px">${g.depo_nama || '<span style="color:var(--text-soft)">—</span>'}</div>
+        <div style="font-size:11px;color:var(--text-muted)">${g.wilayah_nama || ''}</div>
+      </td>
+      <td>
+        <span class="badge ${g.zone === 'IN' ? 'badge-in' : 'badge-out'}">${g.zone}</span>
+      </td>
+      <td><code style="font-size:11px">${g.ip_address || '—'}</code></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:7px">
+          <span style="width:7px;height:7px;border-radius:50%;background:${g.status==='Online'?'var(--success)':'#cbd5e1'};flex-shrink:0;${g.status==='Online'?'box-shadow:0 0 0 2px rgba(22,163,74,.2)':''}"></span>
+          <span class="badge ${g.status === 'Online' ? 'badge-success' : 'badge-warning'}">${g.status}</span>
+        </div>
+      </td>
+      <td style="font-size:12px;color:var(--text-muted)">${fmtTs(g.last_active)}</td>
+      <td class="action-cell">
+        <button class="btn btn-sm btn-outline" onclick='editGw(${JSON.stringify(g).replace(/'/g,"&#39;")})'>Edit</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteGw(${g.id})">Hapus</button>
+      </td>
+    </tr>
+  `).join("");
+}
+
+async function loadWilayahOpts() {
+  const res = await fetch("/api/wilayah");
+  const data = await res.json();
+  const sel = document.getElementById("fWilayah");
+  sel.innerHTML = '<option value="">— pilih wilayah —</option>';
+  data.forEach(w => sel.innerHTML += `<option value="${w.id}">${w.nama}</option>`);
+}
+
+async function loadDepoOpts(wilayahId) {
+  const url = wilayahId ? `/api/depo?wilayah_id=${wilayahId}` : "/api/depo";
+  const res = await fetch(url);
+  const data = await res.json();
+  const sel = document.getElementById("fDepo");
+  sel.innerHTML = '<option value="">— pilih depo —</option>';
+  data.forEach(d => sel.innerHTML += `<option value="${d.id}">${d.nama}</option>`);
+}
+
+function openModal(gw) {
+  loadWilayahOpts(); loadDepoOpts();
+  document.getElementById("modalOverlay").classList.add("show");
+  lucide.createIcons();
+  if (gw) {
+    document.getElementById("modalTitle").textContent = "Edit Gateway";
+    document.getElementById("gwId").value = gw.id;
+    document.getElementById("fGwId").value = gw.gateway_id;
+    document.getElementById("fNama").value = gw.nama;
+    document.getElementById("fZone").value = gw.zone;
+    document.getElementById("fIp").value = gw.ip_address || "";
+    document.getElementById("fStatus").value = gw.status;
+    if (gw.depo_id) setTimeout(() => { document.getElementById("fDepo").value = gw.depo_id; }, 350);
+  } else {
+    document.getElementById("modalTitle").textContent = "Tambah Gateway";
+    document.getElementById("gwForm").reset();
+    document.getElementById("gwId").value = "";
+  }
+}
+
+function editGw(gw) { openModal(gw); }
+function closeModal() { document.getElementById("modalOverlay").classList.remove("show"); }
+
+document.getElementById("gwForm").addEventListener("submit", async function(e) {
+  e.preventDefault();
+  const id = document.getElementById("gwId").value;
+  const payload = {
+    gateway_id: document.getElementById("fGwId").value,
+    nama: document.getElementById("fNama").value,
+    depo_id: document.getElementById("fDepo").value || null,
+    zone: document.getElementById("fZone").value,
+    ip_address: document.getElementById("fIp").value || null,
+    status: document.getElementById("fStatus").value
+  };
+  const res = await fetch(id ? `/api/gateways/${id}` : "/api/gateways", {
+    method: id ? "PUT" : "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const d = await res.json();
+  if (d.ok) { showToast("Gateway berhasil disimpan", "success"); closeModal(); loadGateways(); }
+  else showToast("Error: " + d.error, "error");
+});
+
+async function deleteGw(id) {
+  if (!confirm("Hapus gateway ini?")) return;
+  await fetch(`/api/gateways/${id}`, { method: "DELETE" });
+  showToast("Gateway dihapus", "info");
+  loadGateways();
+}
+
+document.getElementById("modalOverlay").addEventListener("click", e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+
+loadGateways();
+</script>
+{% endblock %}

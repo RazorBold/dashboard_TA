@@ -1,0 +1,267 @@
+{% extends "base.html" %}
+{% block title %}Monitor Deteksi BLE{% endblock %}
+{% block topbar_title %}Monitor Deteksi BLE{% endblock %}
+{% block topbar_sub %}Raw BLE detection stream secara real-time dari semua gateway{% endblock %}
+
+{% block content %}
+
+<!-- Stats bar -->
+<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:1.25rem">
+  <div class="kpi-card" style="flex-direction:row;align-items:center;gap:14px;padding:18px 22px">
+    <div class="kpi-icon-wrap kpi-in"><i data-lucide="radio"></i></div>
+    <div class="kpi-body">
+      <div class="kpi-value" id="statTotal" style="font-size:1.5rem">0</div>
+      <div class="kpi-label">Total Deteksi</div>
+    </div>
+  </div>
+  <div class="kpi-card" style="flex-direction:row;align-items:center;gap:14px;padding:18px 22px">
+    <div class="kpi-icon-wrap kpi-gw"><i data-lucide="tag"></i></div>
+    <div class="kpi-body">
+      <div class="kpi-value" id="statUniq" style="font-size:1.5rem">0</div>
+      <div class="kpi-label">MAC Unik</div>
+    </div>
+  </div>
+  <div class="kpi-card" style="flex-direction:row;align-items:center;gap:14px;padding:18px 22px">
+    <div class="kpi-icon-wrap kpi-tag"><i data-lucide="zap"></i></div>
+    <div class="kpi-body">
+      <div class="kpi-value" id="statRate" style="font-size:1.5rem">0</div>
+      <div class="kpi-label">Deteksi / menit</div>
+    </div>
+  </div>
+  <div class="kpi-card" style="flex-direction:row;align-items:center;gap:14px;padding:18px 22px">
+    <div class="kpi-icon-wrap kpi-out"><i data-lucide="check-circle"></i></div>
+    <div class="kpi-body">
+      <div class="kpi-value" id="statFlush" style="font-size:1.5rem">0</div>
+      <div class="kpi-label">Event Diproses</div>
+    </div>
+  </div>
+</div>
+
+<!-- Stream card -->
+<div class="card" style="padding:0;overflow:hidden">
+  <div class="card-header" style="padding:14px 20px;border-bottom:1px solid var(--border)">
+    <div style="display:flex;align-items:center;gap:10px">
+      <i data-lucide="activity" class="icon-md" style="color:var(--primary)"></i>
+      <span style="font-weight:600">Live Detection Stream</span>
+      <span class="badge badge-live">LIVE</span>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <!-- Filter gateway -->
+      <select id="fGw" class="form-select" style="font-size:12px;padding:5px 10px;height:32px;width:140px">
+        <option value="">Semua Gateway</option>
+      </select>
+      <button class="btn btn-outline" id="btnPause" style="font-size:12px;padding:5px 14px;height:32px">
+        <i data-lucide="pause" style="width:13px;height:13px"></i> Pause
+      </button>
+      <button class="btn btn-outline" id="btnClear" style="font-size:12px;padding:5px 14px;height:32px">
+        <i data-lucide="trash-2" style="width:13px;height:13px"></i> Clear
+      </button>
+    </div>
+  </div>
+
+  <!-- Legend -->
+  <div style="display:flex;gap:18px;padding:10px 20px;background:var(--surface-alt,#f8fafc);border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted)">
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#dbeafe;border:1px solid #93c5fd;margin-right:5px"></span>Buffering</span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#dcfce7;border:1px solid #86efac;margin-right:5px"></span>Event masuk DB</span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#f1f5f9;border:1px solid #cbd5e1;margin-right:5px"></span>Status sama (skip)</span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#fee2e2;border:1px solid #fca5a5;margin-right:5px"></span>Tag tidak terdaftar</span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#fffbeb;border:1px solid #fcd34d;margin-right:5px"></span>Sinyal terlalu lemah (OUT diblokir)</span>
+  </div>
+
+  <!-- Table header -->
+  <div class="det-header">
+    <span style="width:105px">WAKTU</span>
+    <span style="flex:1;min-width:145px">MAC ADDRESS</span>
+    <span style="width:110px">GATEWAY</span>
+    <span style="width:80px">RSSI</span>
+    <span style="width:90px">SINYAL</span>
+    <span style="width:80px">BUFFER</span>
+    <span style="width:110px">STATUS</span>
+  </div>
+
+  <!-- Stream rows -->
+  <div id="detStream" style="max-height:calc(100vh - 380px);min-height:260px;overflow-y:auto;font-size:12px">
+    <div id="emptyMsg" style="padding:48px;text-align:center;color:var(--text-soft)">
+      <i data-lucide="radar" style="width:36px;height:36px;margin:0 auto 12px;display:block;opacity:.3"></i>
+      <p>Menunggu deteksi BLE...</p>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<style>
+.det-header {
+  display: flex;
+  align-items: center;
+  padding: 8px 20px;
+  background: var(--surface-alt, #f8fafc);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  gap: 0;
+}
+.det-row {
+  display: flex;
+  align-items: center;
+  padding: 7px 20px;
+  border-bottom: 1px solid var(--border);
+  gap: 0;
+  transition: background .15s;
+  animation: feedSlide .18s ease both;
+}
+.det-row:hover { background: var(--surface-hover, #f1f5f9) !important; }
+.det-row.r-detect { background: #eff6ff; }
+.det-row.r-ok     { background: #f0fdf4; font-weight: 500; }
+.det-row.r-same       { background: #f8fafc; }
+.det-row.r-notfound   { background: #fef2f2; }
+.det-row.r-flush-sep  {
+  background: #f0fdf4;
+  border-top: 2px solid #86efac;
+  border-bottom: 2px solid #86efac;
+}
+.det-row.r-weak { background: #fffbeb; }
+.det-row > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.buf-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin: 0 1px; }
+.buf-dot.filled { background: var(--primary); }
+.buf-dot.empty  { background: #cbd5e1; }
+</style>
+<script>
+let paused   = false;
+let total    = 0;
+let flushOk  = 0;
+let seenMacs = new Set();
+let gwSet    = new Set();
+let rateLog  = [];   // timestamps for rate calc
+let filterGw = "";
+
+const stream = document.getElementById("detStream");
+const empty  = document.getElementById("emptyMsg");
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+function fmtTs(ts) {
+  if (!ts) return "—";
+  const d = new Date(ts.replace(" ", "T") + "Z");
+  const p = n => String(n).padStart(2, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+function rssiBar(rssi) {
+  const lvl  = rssi >= -55 ? 4 : rssi >= -65 ? 3 : rssi >= -75 ? 2 : 1;
+  const clr  = ["#dc2626","#f59e0b","#2563eb","#16a34a"][lvl - 1];
+  const bars = "█".repeat(lvl) + "░".repeat(4 - lvl);
+  return `<span style="color:${clr};font-family:monospace;letter-spacing:1px;font-size:13px">${bars}</span>`;
+}
+
+function bufDots(n, max) {
+  let html = "";
+  for (let i = 0; i < max; i++) {
+    html += `<span class="buf-dot ${i < n ? "filled" : "empty"}"></span>`;
+  }
+  return html;
+}
+
+function statusChip(type, status, ev) {
+  if (type === "detect") return `<span style="font-size:10px;color:var(--text-muted)">buffering</span>`;
+  const map = {
+    ok:           `<span class="badge badge-in">${ev || "EVENT"}</span>`,
+    same_state:   `<span class="badge" style="background:#f1f5f9;color:#94a3b8;font-size:10px">SAMA</span>`,
+    rssi_weak:    `<span class="badge" style="background:#fef3c7;color:#d97706;font-size:10px">SINYAL LEMAH</span>`,
+    "tag not found":     `<span class="badge" style="background:#fee2e2;color:#b91c1c;font-size:10px">TAG ?</span>`,
+    "gateway not found": `<span class="badge" style="background:#fee2e2;color:#b91c1c;font-size:10px">GW ?</span>`,
+  };
+  return map[status] || `<span class="badge" style="background:#f1f5f9;color:#64748b;font-size:10px">${status}</span>`;
+}
+
+function rowClass(type, status) {
+  if (type === "detect")        return "r-detect";
+  if (status === "ok")          return "r-ok";
+  if (status === "same_state")  return "r-same";
+  if (status === "rssi_weak")   return "r-weak";
+  return "r-notfound";
+}
+
+// ── add row ───────────────────────────────────────────────────────────────────
+function addRow(d) {
+  if (filterGw && d.gw !== filterGw) return;
+  if (empty.parentNode) empty.remove();
+
+  const div = document.createElement("div");
+  div.className = `det-row ${rowClass(d.type, d.status)}`;
+  div.innerHTML = `
+    <span style="width:105px;color:var(--text-muted)">${fmtTs(d.ts)}</span>
+    <span style="flex:1;min-width:145px;font-family:monospace;font-size:11px">${d.mac}</span>
+    <span style="width:110px"><code style="font-size:11px">${d.gw}</code></span>
+    <span style="width:80px;font-weight:600;color:${d.rssi >= -65 ? '#16a34a' : d.rssi >= -75 ? '#f59e0b' : '#dc2626'}">${d.rssi} dBm</span>
+    <span style="width:90px">${rssiBar(d.rssi)}</span>
+    <span style="width:80px">${bufDots(d.n, d.max)}</span>
+    <span style="width:110px">${statusChip(d.type, d.status, d.ev)}</span>
+  `;
+  stream.prepend(div);
+
+  // Keep max 200 rows
+  const rows = stream.querySelectorAll(".det-row");
+  if (rows.length > 200) rows[rows.length - 1].remove();
+}
+
+// ── stats ─────────────────────────────────────────────────────────────────────
+function updateStats(d) {
+  total++;
+  seenMacs.add(d.mac);
+  rateLog.push(Date.now());
+  if (d.type === "flush" && d.status === "ok") flushOk++;
+
+  if (!gwSet.has(d.gw)) {
+    gwSet.add(d.gw);
+    const opt = document.createElement("option");
+    opt.value = d.gw; opt.textContent = d.gw;
+    document.getElementById("fGw").appendChild(opt);
+  }
+
+  document.getElementById("statTotal").textContent = total.toLocaleString("id-ID");
+  document.getElementById("statUniq").textContent  = seenMacs.size;
+  document.getElementById("statFlush").textContent = flushOk;
+}
+
+function calcRate() {
+  const now = Date.now();
+  rateLog = rateLog.filter(t => now - t < 60000);
+  document.getElementById("statRate").textContent = rateLog.length;
+}
+setInterval(calcRate, 3000);
+
+// ── WebSocket ─────────────────────────────────────────────────────────────────
+const socket = io({ transports: ["websocket", "polling"] });
+socket.on("ble_raw", d => {
+  updateStats(d);
+  if (!paused) addRow(d);
+});
+
+// ── controls ──────────────────────────────────────────────────────────────────
+document.getElementById("btnPause").addEventListener("click", function() {
+  paused = !paused;
+  this.innerHTML = paused
+    ? '<i data-lucide="play" style="width:13px;height:13px"></i> Resume'
+    : '<i data-lucide="pause" style="width:13px;height:13px"></i> Pause';
+  if (typeof lucide !== "undefined") lucide.createIcons();
+});
+
+document.getElementById("btnClear").addEventListener("click", () => {
+  stream.innerHTML = "";
+  total = 0; flushOk = 0; seenMacs = new Set(); rateLog = [];
+  document.getElementById("statTotal").textContent = "0";
+  document.getElementById("statUniq").textContent  = "0";
+  document.getElementById("statFlush").textContent = "0";
+  document.getElementById("statRate").textContent  = "0";
+  stream.appendChild(empty.cloneNode(true));
+});
+
+document.getElementById("fGw").addEventListener("change", function() {
+  filterGw = this.value;
+});
+</script>
+{% endblock %}

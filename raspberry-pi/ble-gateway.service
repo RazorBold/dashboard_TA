@@ -1,0 +1,29 @@
+# Systemd service — auto-start gateway saat Raspberry Pi nyala
+#
+# Cara install:
+#   sudo cp ble-gateway.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable ble-gateway
+#   sudo systemctl start  ble-gateway
+#
+# Cek status:
+#   sudo systemctl status ble-gateway
+#   journalctl -u ble-gateway -f
+
+[Unit]
+Description=BLE Gateway Middleware
+After=network-online.target bluetooth.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/ble-gateway
+ExecStart=/usr/bin/python3 /home/pi/ble-gateway/gateway.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
